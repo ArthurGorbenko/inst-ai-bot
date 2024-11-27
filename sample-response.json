@@ -1,0 +1,58 @@
+{
+  id: '8fb104d2-0845-4f28-87e7-5c74831c38e9',
+  data: '{\n' +
+    '  "Comprehensive Description": "The video showcases a day in the life of a person living in a city, beginning with a serene sunrise view from their apartment window. Throughout the day, the person engages in various activities such as making tea, working on a laptop, and occasionally looking out the window. The scenes transition to different shots of the city skyline, capturing the beauty of the city from morning to night. The person also commutes to work, interacts with a homeless person, buys coffee, works at an office, and returns home. The day concludes with them finishing their work and going to bed, with the video ending on a peaceful note as night falls.",\n' +
+    '  "Categorization": {\n' +
+    '    "Categories": [
+        "Documentary",
+        "Lifestyle",
+        "Cityscape"
+      ],\n' +
+    '    "Subcategories": [
+        "Daily Routine",
+        "Urban Living",
+        "Work Life"
+      ]\n' +
+    '
+    },\n' +
+    '  "Timeline of Key Events": [\n' +
+    '    {
+        "timestamp": 0,
+        "description": "Sunrise view from the apartment window"
+      },\n' +
+    '    {
+        "timestamp": 6,
+        "description": "Making tea and interacting with the cat"
+      },\n' +
+    '    {
+        "timestamp": 16,
+        "description": "Commuting to work"
+      },\n' +
+    '    {
+        "timestamp": 26,
+        "description": "Passing by a homeless person"
+      },\n' +
+    '    {
+        "timestamp": 31,
+        "description": "Buying coffee"
+      },\n' +
+    '    {
+        "timestamp": 36,
+        "description": "Working at the office"
+      },\n' +
+    '    {
+        "timestamp": 46,
+        "description": "Returning home"
+      },\n' +
+    '    {
+        "timestamp": 51,
+        "description": "Sunset view from the apartment window"
+      }\n' +
+    '
+    ],\n' +
+    `  "Main Ideas and Themes": "The video emphasizes the importance of personal routines, empathy towards the less fortunate, and finding beauty in everyday moments. Recurring themes include the contrast between indoor and outdoor spaces, the individual's connection with their cat, and the juxtaposition of nature against urban landscapes.",\n` +
+    '  "Vibe and Mood Analysis": "The overall vibe of the video is contemplative and serene, with emotional tones shifting from peaceful mornings to bustling city life during the day and back to tranquility in the evening.",\n' +
+    '  "Music and Audio Elements": "The music used in the video transitions from soft piano pieces to more energetic electronic tracks as the day progresses, complementing the shifting moods from morning calmness to daytime energy and then back to evening serenity. Specific tracks or artists are not identified."\n' +
+    '
+  }'
+}
