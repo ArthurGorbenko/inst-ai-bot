@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^16.4.5",
+    "mongodb": "^6.11.0",
     "openai": "^4.73.1",
     "twelvelabs-js": "^0.3.3"
   }
