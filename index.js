@@ -26,8 +26,9 @@ const readPrompts = () => {
     readFileSync("./prompts/1.categorization.txt", "utf-8"),
     readFileSync("./prompts/1.timeline.txt", "utf-8"),
     readFileSync("./prompts/1.main-ideas.txt", "utf-8"),
-    readFileSync("./prompts/1.vibe-music.txt", "utf-8"),
+    readFileSync("./prompts/1.vibe.txt", "utf-8"),
     readFileSync("./prompts/1.music-audio.txt", "utf-8"),
+    readFileSync("./prompts/2.script.txt", "utf-8")
   ];
   console.log("Prompts read successfully");
   return prompts;
@@ -99,6 +100,128 @@ const updateCollection = async (collection, mediaId, data) => {
   }
 };
 
+const updateExperimentCollection = async (collection, mediaId, promptPath, data) => {
+  const cleanedData = cleanData(data);
+  try {
+    console.log(`Parsing experimental data for mediaId: ${mediaId}`);
+    const parsedData = JSON.parse(cleanedData);
+    console.log("Data parsed successfully");
+
+    // Get current version number for this mediaId + promptPath combination
+    const lastExperiment = await collection
+      .find({ mediaId, promptPath })
+      .sort({ version: -1 })
+      .limit(1)
+      .toArray();
+    
+    const version = lastExperiment.length > 0 ? lastExperiment[0].version + 1 : 1;
+
+    // Store experiment with version
+    await collection.insertOne({
+      mediaId,
+      promptPath,
+      version,
+      data: parsedData,
+      createdAt: new Date(),
+    });
+
+    console.log(`Experiment stored for mediaId: ${mediaId}, version: ${version}`);
+    return { ...parsedData, version };
+  } catch (error) {
+    if (error instanceof SyntaxError && error.message.includes("JSON")) {
+      console.log("JSON parse error detected, attempting to fix JSON...");
+      const fixedJSONPrompt = fixJSONPrompt(cleanedData);
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: fixedJSONPrompt }],
+        temperature: 0,
+        response_format: { type: "json_object" },
+      });
+
+      const fixedJson = response.choices[0].message.content;
+      const parsedFixedJson = JSON.parse(fixedJson);
+      
+      // Store fixed JSON as a new version
+      const lastExperiment = await collection
+        .find({ mediaId, promptPath })
+        .sort({ version: -1 })
+        .limit(1)
+        .toArray();
+      
+      const version = lastExperiment.length > 0 ? lastExperiment[0].version + 1 : 1;
+
+      await collection.insertOne({
+        mediaId,
+        promptPath,
+        version,
+        data: parsedFixedJson,
+        createdAt: new Date(),
+      });
+
+      console.log(`Fixed JSON experiment stored for mediaId: ${mediaId}, version: ${version}`);
+      return { ...parsedFixedJson, version };
+    } else {
+      console.error("Error storing experiment:", error);
+      throw error;
+    }
+  }
+};
+
+const testPrompt = async (videoId, promptPath) => {
+  try {
+    const client = new TwelveLabs({ apiKey: process.env.TWELVE_LABS_API_KEY });
+    const mongoClient = new MongoClient(uri);
+    await mongoClient.connect();
+    
+    const db = mongoClient.db("creator-kb");
+    const experimentsCollection = db.collection("experiments");
+    
+    console.log(`Reading prompt from ${promptPath}...`);
+    const prompt = readFileSync(promptPath, "utf-8");
+    
+    console.log(`Generating text for videoID: ${videoId} with prompt: ${prompt}`);
+    const res = await client.generate.text(videoId, prompt, 0.5, {});
+    console.log(`Text generation completed for video ${videoId}`);
+    
+    console.log(`Storing experiment result...`);
+    const result = await updateExperimentCollection(
+      experimentsCollection,
+      videoId,
+      promptPath,
+      res.data
+    );
+    
+    console.log(`Experiment stored successfully:`);
+    console.log(`- Video ID: ${videoId}`);
+    console.log(`- Prompt: ${promptPath}`);
+    console.log(`- Version: ${result.version}`);
+    
+    await mongoClient.close();
+    return result;
+  } catch (error) {
+    console.error("Error testing prompt:", error);
+    throw error;
+  }
+};
+
+const main = async () => {
+  const args = process.argv.slice(2);
+  
+  if (args.length === 0) {
+    // Run the original full analysis
+    await generateText();
+  } else if (args.length === 2) {
+    // Run single prompt test
+    const [videoId, promptPath] = args;
+    await testPrompt(videoId, promptPath);
+  } else {
+    console.log("Usage:");
+    console.log("Full analysis: node index.js");
+    console.log("Single prompt test: node index.js <videoId> <promptPath>");
+    process.exit(1);
+  }
+};
+
 const generateText = async () => {
   try {
     const collection = await connectToMongo();
@@ -143,4 +266,4 @@ const generateText = async () => {
   }
 };
 
-generateText();
+main();

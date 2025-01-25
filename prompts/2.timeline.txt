@@ -1,0 +1,19 @@
+Analyze the provided video reel featuring content from a tech blogger influencer
+and extract a Timeline of Key Events that outlines significant moments, scenes,
+or topics discussed in chronological order. For each event, include: the
+Timestamp (in seconds) indicating when the event occurs; a detailed Event
+Description explaining what happens visually and audibly during the event. Focus
+on specific actions, on-screen text or captions, spoken phrases, and notable
+audio elements such as sound effects or background noise. Highlight clear
+transitions or changes in focus, such as shifts in scene, product introductions,
+demonstrations, comparisons, or calls to action. Avoid speculation about meaning
+and emphasize observable details to ensure precision. The output will create a
+structured narrative of the video, supporting a Knowledge Base for LLMs to
+assist influencers with content strategy, audience engagement, and trend
+analysis. Output results in this JSON format: {"timeline_of_key_events":
+[{"timestamp": "Start time in seconds.","event_description": "Detailed
+explanation of the event."},{"timestamp": "Next event start
+time.","event_description": "Detailed explanation of the next event."}]} Ensure
+the JSON is valid, contains no formatting, markdown, or new line characters, is
+compatible with JSON.parse(), and includes maximum detail to make the timeline
+actionable and comprehensive.

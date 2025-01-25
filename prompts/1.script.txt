@@ -1,0 +1,29 @@
+Given a text-based description of a tech blogger's Instagram reel, create a detailed script as a reference for the blogger. The script should include:
+Basic Details: Brief introduction, purpose of the video, and target audience.
+Scenes: For each scene, describe what is happening on screen, including actions, transitions, tools, and interactions.
+Audio: Specify background music, sound effects, or voice-over.
+Spoken Content: Quote exact words spoken or narrated in the video to reflect dialogue delivery.
+Captions: Provide captions or on-screen text aligned with the visuals and spoken words.
+Focus on detailed scene descriptions, ensuring the script reflects visuals and spoken dialogue accurately. Emphasize tools, actions, and interactions shown in the video. Format the output as valid JSON.
+
+Example JSON Structure:
+"""
+{  
+  "intro": "Welcome! Today, we'll discuss effective communication in remote work settings.",  
+  "scenes": [  
+    {  
+      "description": "Shot of a person typing at a desk with a city view. Close-up of their screens showing software tools.",  
+      "audio": "Soft upbeat music.",  
+      "spoken_content": "\"Hi! Let’s explore tips for better remote work communication.\"",  
+      "captions": "Effective Communication Tips"  
+    },  
+    {  
+      "description": "Close-up of a coffee sip, screens showing a project dashboard and communication app.",  
+      "audio": "Coffee sip sound effect, light typing.",  
+      "spoken_content": "\"Use tools to stay connected and organized.\"",  
+      "captions": "Leverage Tools for Communication"  
+    }  
+  ],  
+  "outro": "Thanks for watching! Subscribe for more remote work tips."  
+}
+"""
