@@ -3,6 +3,9 @@ import subprocess
 import easyocr
 import whisper
 
+from pymongo import MongoClient
+from PIL import Image
+from transformers import BlipProcessor, BlipForConditionalGeneration
 from scenedetect import open_video, detect, AdaptiveDetector, save_images
 from concurrent.futures import ThreadPoolExecutor
 
@@ -13,16 +16,50 @@ image_dir = "./scenes"
 def process_scenes(video_path, images_dir):
     detect_and_save_scenes(video_path)
     get_captions(images_dir)
+    generate_scene_description(images_dir)
+
+
+def generate_scene_description(images_dir):
+    print(f"\n=== Starting generate_scene_description for directory: {images_dir} ===")
+    try:
+        print("Loading BLIP processor and model...")
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained(
+            "Salesforce/blip-image-captioning-base"
+        )
+        
+        files = os.listdir(images_dir)
+        print(f"Found {len(files)} files in directory")
+        
+        for f in files:
+            image_path = os.path.join(images_dir, f)
+            print(f"Processing image: {image_path}")
+            image = Image.open(image_path)
+            inputs = processor(image, return_tensors="pt")
+            outputs = model.generate(**inputs)
+            caption = processor.decode(outputs[0], skip_special_tokens=True)
+            print(f"Generated Caption for {f}: {caption}\n")
+    except Exception as e:
+        print(f"Error in generate_scene_description: {str(e)}")
 
 
 def get_captions(images_path):
-    for f in os.listdir(images_path):
-        reader = easyocr.Reader(["en"])
-        results = reader.readtext(f)
+    print(f"\n=== Starting get_captions for directory: {images_path} ===")
+    try:
+        files = os.listdir(images_path)
+        print(f"Found {len(files)} files in directory")
+        
+        for f in files:
+            image_path = os.path.join(images_path, f)
+            print(f"Processing image: {image_path}")
+            reader = easyocr.Reader(["en"])
+            results = reader.readtext(image_path)
 
-        print("Detected Text:")
-        for result in results:
-            print(f"{result[1]} (Confidence: {result[2]:.2f})")
+            for result in results:
+                print(f"{result[1]} (Confidence: {result[2]:.2f})")
+            print()  # Empty line between images
+    except Exception as e:
+        print(f"Error in get_captions: {str(e)}")
 
 
 def detect_and_save_scenes(video_path):
@@ -40,15 +77,11 @@ def detect_and_save_scenes(video_path):
     )
 
     # Save images (by default, a few key frames per scene) to output_dir.
-    # The save_images function uses the scene_list and video stream to extract frames.
     save_images(
         scene_list=scene_list,
         video=video,
-        image_name_template=f"./scenes/$VIDEO_NAME-Scene-$SCENE_NUMBER-$IMAGE_NUMBER",
+        image_name_template=f"./scenes/$VIDEO_NAME--$SCENE_NUMBER--$IMAGE_NUMBER--$TIMECODE",
     )
-
-    # Clean up: release the video resource.
-    video.release()
 
 
 def extract_transcription(path):
@@ -86,7 +119,8 @@ def extract_transcription(path):
 
 with ThreadPoolExecutor(max_workers=2) as executor:
     future1 = executor.submit(process_scenes, path, image_dir)
-    future2 = executor.submit(extract_transcription, path)
+    process_scenes(path, image_dir)
+    # future2 = executor.submit(extract_transcription, path)
 
 
 print("finished in parallel")
