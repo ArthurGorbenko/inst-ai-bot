@@ -13,8 +13,8 @@ from openai import OpenAI
 
 clientAI = OpenAI()
 
-path = "./reels/3481080082629109504_5599290503.mp4"
-videoID = "3481080082629109504_5599290503"
+path = "./reels/3505607525892794154_5599290503.mp4"
+videoID = "3505607525892794154_5599290503.mp4"
 image_dir = "./scenes"
 client = MongoClient("mongodb://localhost:27017/")  # Your MongoDB connection
 
@@ -343,21 +343,14 @@ def seconds_to_timestamp(seconds):
 
 def summarize(scenes):
     scenes_json = json.dumps(scenes, indent=2)
-    prompt = f"""
-You are a content creator and engineer helping to structure short-form video content for reuse, retrieval, and AI interaction.
-
-You are given a structured JSON containing a list of **scenes**, including:
-- Transcriptions (accurate speech-to-text)
-- Captions (OCR, may be noisy)
-- Image descriptions (approximate)
-
-Task:
-- Extract **precise summary** and **retrieval-friendly metadata**
-- Focus on transcriptions and captions; only use image descriptions if clearly relevant
-- Omit unrelated/inconsistent info from noisy sources
-
-Return structured output optimized for **RAG-based indexing and querying**:
-"""
+    prompt_file_path = "./prompts/system/1.summarize-structured.txt"
+    prompt = ""
+    try:
+        with open(prompt_file_path, "r") as file:
+            prompt = file.read()
+    except Exception as e:
+        print(f"Error reading prompt file: {str(e)}")
+        prompt = "Please analyze the following video scene data and provide a structured summary:"
 
     response = clientAI.responses.create(
         model="gpt-4.1",
@@ -424,7 +417,7 @@ Return structured output optimized for **RAG-based indexing and querying**:
             }
         },
     )
-
+    
     return json.loads(response.output_text)
 
 
