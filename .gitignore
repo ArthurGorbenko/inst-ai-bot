@@ -1,8 +1,41 @@
+# Node.js
 node_modules/
+
+# Environment variables
 .env
+
+# System files
 .DS_Store
+
+# Python
 venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+video_processor/__pycache__/
+**/__pycache__/
+
+# Python packaging
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+parts/
+bin/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Project specific
 temp/
 reels/
 scenes/
- __pycache__/
+yolo11n.pt
+yolo11x.pt
+yolov8n.pt

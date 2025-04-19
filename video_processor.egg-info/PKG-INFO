@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: video_processor
+Version: 0.1.0
+License-File: LICENSE
+Requires-Dist: pymongo
+Requires-Dist: paddleocr
+Requires-Dist: pillow
+Requires-Dist: transformers
+Requires-Dist: scenedetect
+Requires-Dist: openai
+Requires-Dist: whisper
+Dynamic: license-file
+Dynamic: requires-dist
