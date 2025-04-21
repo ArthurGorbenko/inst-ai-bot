@@ -1,7 +1,0 @@
-pymongo
-paddleocr
-pillow
-transformers
-scenedetect
-openai
-whisper

@@ -1,5 +1,4 @@
 import json
-import os
 from openai import OpenAI
 
 def summarize_scenes(scenes):
