@@ -10,21 +10,14 @@ import uuid
 import asyncio
 from pathlib import Path
 
-# Import our existing pipeline components
-from video_processor.multimodal import generate_summary
-from video_processor.config import get_config
+# Import our modular pipeline
+from video_processor.pipeline import run_analysis, get_supported_analysis_types, get_analysis_descriptions
 
 app = FastAPI(title="Video Analysis API", version="1.0.0")
 
 class AnalysisType(str, Enum):
     MULTIMODAL = "multimodal"
-    SCENE_DETECTION = "scene_detection"
-    TRANSCRIPTION = "transcription" 
-    OCR = "ocr"
-    CAPTIONING = "captioning"
-    MATCHING = "matching"
-    STRUCTURED_SUMMARY = "structured_summary"
-    FULL_PIPELINE = "full_pipeline"
+    STRUCTURED = "structured"
 
 class AnalysisRequest(BaseModel):
     analyses: List[AnalysisType] = Field(default=[AnalysisType.MULTIMODAL])
@@ -49,9 +42,15 @@ async def analyze_video(
     """
     Analyze uploaded video file with specified analysis types
     """
-    # Validate file type
-    if not video.content_type or not video.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="File must be a video")
+    # Validate file type - check both content type and file extension
+    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
+    file_extension = Path(video.filename).suffix.lower() if video.filename else ""
+    
+    is_video_content_type = video.content_type and video.content_type.startswith("video/")
+    is_video_extension = file_extension in video_extensions
+    
+    if not (is_video_content_type or is_video_extension):
+        raise HTTPException(status_code=400, detail=f"File must be a video. Got content_type: {video.content_type}, extension: {file_extension}")
     
     # Parse analysis types
     try:
@@ -120,18 +119,18 @@ async def process_video_analysis(job_id: str):
     job = analysis_jobs[job_id]
     
     try:
-        video_path = job["video_path"]
-        analysis_types = job["analyses"]
-        results = {}
+        video_path = str(job["video_path"])
+        analysis_types = [analysis.value for analysis in job["analyses"]]
         
-        # Process each requested analysis type
-        for analysis_type in analysis_types:
-            if analysis_type == AnalysisType.MULTIMODAL:
-                # For now, we'll use a mock result since we need TwelveLabs video upload
-                results["multimodal"] = await process_multimodal_analysis(str(video_path))
-            else:
-                # Placeholder for other analysis types
-                results[analysis_type.value] = {"status": "not_implemented"}
+        # Run analysis in thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(
+            None, 
+            run_analysis, 
+            video_path, 
+            analysis_types, 
+            None  # twelvelabs_video_id
+        )
         
         # Update job with results
         job["status"] = "completed"
@@ -145,27 +144,6 @@ async def process_video_analysis(job_id: str):
         # Cleanup temporary files after some delay
         asyncio.create_task(cleanup_job_files(job_id, delay=3600))  # 1 hour delay
 
-async def process_multimodal_analysis(video_path: str) -> Dict:
-    """
-    Process multimodal analysis
-    Note: This is a placeholder - actual implementation would need to upload video to TwelveLabs first
-    """
-    try:
-        config = get_config()
-        
-        # TODO: Upload video to TwelveLabs and get video_id
-        # For now, return mock data
-        return {
-            "status": "mock_result",
-            "message": "Multimodal analysis requires TwelveLabs video upload integration",
-            "video_path": video_path
-        }
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
 
 async def cleanup_job_files(job_id: str, delay: int = 3600):
     """
@@ -222,7 +200,8 @@ async def root():
             "DELETE /analyze/{job_id}": "Cancel analysis job",
             "GET /health": "Health check"
         },
-        "supported_analyses": [analysis.value for analysis in AnalysisType]
+        "supported_analyses": get_supported_analysis_types(),
+        "analysis_descriptions": get_analysis_descriptions()
     }
 
 if __name__ == "__main__":
