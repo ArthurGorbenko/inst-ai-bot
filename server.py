@@ -8,12 +8,38 @@ from pydantic import BaseModel, Field
 from enum import Enum
 import uuid
 import asyncio
+import logging
 from pathlib import Path
 
 # Import our modular pipeline
 from video_processor.pipeline import run_analysis, get_supported_analysis_types, get_analysis_descriptions
+from video_processor.config import get_config
+from video_processor.db import DatabaseConnection, JobManager, ResultsManager
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Video Analysis API", version="1.0.0")
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection on startup"""
+    global job_manager, results_manager
+    
+    if not db_connection.connect():
+        logger.error("Failed to connect to MongoDB - server cannot start")
+        raise RuntimeError("MongoDB connection required for server operation")
+    
+    job_manager = JobManager(db_connection)
+    results_manager = ResultsManager(db_connection)
+    logger.info("MongoDB connection established - server ready")
+        
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up database connection on shutdown"""
+    if db_connection:
+        db_connection.close()
 
 class AnalysisType(str, Enum):
     MULTIMODAL = "multimodal"
@@ -30,8 +56,11 @@ class AnalysisResponse(BaseModel):
     error: Optional[str] = None
     processing_time: Optional[float] = None
 
-# Store for tracking analysis jobs
-analysis_jobs: Dict[str, Dict] = {}
+# Initialize database connection and managers
+config = get_config()
+db_connection = DatabaseConnection(config)
+job_manager = None
+results_manager = None
 
 @app.post("/analyze", response_model=AnalysisResponse)
 async def analyze_video(
@@ -71,14 +100,21 @@ async def analyze_video(
             shutil.copyfileobj(video.file, buffer)
         
         # Initialize job tracking
-        analysis_jobs[job_id] = {
-            "status": "processing",
-            "temp_dir": temp_dir,
-            "video_path": video_path,
-            "analyses": analysis_list,
-            "results": {},
-            "error": None
+        job_data = {
+            "job_id": job_id,
+            "video_filename": video.filename,
+            "video_size": video.size if hasattr(video, 'size') else 0,
+            "video_content_type": video.content_type or "",
+            "temp_dir": str(temp_dir),
+            "video_path": str(video_path),
+            "analyses": [a.value for a in analysis_list]
         }
+        
+        if not job_manager.create_job(job_data):
+            # Cleanup and raise error if job creation fails
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+            raise HTTPException(status_code=500, detail="Failed to create job - database error")
         
         # Start async processing
         asyncio.create_task(process_video_analysis(job_id))
@@ -100,27 +136,46 @@ async def get_analysis_status(job_id: str):
     """
     Get status and results of analysis job
     """
-    if job_id not in analysis_jobs:
+    job = job_manager.get_job(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job = analysis_jobs[job_id]
+    results = None
+    if job["status"] == "completed":
+        results_list = results_manager.get_results(job_id)
+        if results_list:
+            results = {}
+            for result in results_list:
+                results[result["analysis_type"]] = result["results"]
     
     return AnalysisResponse(
         job_id=job_id,
         status=job["status"],
-        results=job["results"] if job["status"] == "completed" else None,
-        error=job["error"]
+        results=results,
+        error=job.get("error")
     )
 
 async def process_video_analysis(job_id: str):
     """
     Process video analysis in background
     """
-    job = analysis_jobs[job_id]
+    job_data = job_manager.get_job(job_id)
+    if not job_data:
+        logger.error(f"Job {job_id} not found in database")
+        return
+    
+    job = {
+        "video_path": job_data["video_path"],
+        "analyses": job_data["analyses"]
+    }
     
     try:
         video_path = str(job["video_path"])
-        analysis_types = [analysis.value for analysis in job["analyses"]]
+        # Handle both string arrays and AnalysisType enum arrays
+        if isinstance(job["analyses"][0], str):
+            analysis_types = job["analyses"]
+        else:
+            analysis_types = [analysis.value for analysis in job["analyses"]]
         
         # Run analysis in thread pool to avoid blocking the event loop
         loop = asyncio.get_event_loop()
@@ -133,12 +188,14 @@ async def process_video_analysis(job_id: str):
         )
         
         # Update job with results
-        job["status"] = "completed"
-        job["results"] = results
+        job_manager.update_job_status(job_id, "completed")
+        # Store results separately for each analysis type
+        for analysis_type, result_data in results.items():
+            results_manager.store_results(job_id, analysis_type, result_data, 0.0)  # TODO: track actual processing time
         
     except Exception as e:
-        job["status"] = "failed"
-        job["error"] = str(e)
+        error_msg = str(e)
+        job_manager.update_job_status(job_id, "failed", error_msg)
     
     finally:
         # Cleanup temporary files after some delay
@@ -151,31 +208,33 @@ async def cleanup_job_files(job_id: str, delay: int = 3600):
     """
     await asyncio.sleep(delay)
     
-    if job_id in analysis_jobs:
-        job = analysis_jobs[job_id]
+    job = job_manager.get_job(job_id)
+    if job:
         temp_dir = job.get("temp_dir")
-        
-        if temp_dir and temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        
-        # Remove job from tracking
-        del analysis_jobs[job_id]
+        if temp_dir:
+            temp_dir_path = Path(temp_dir) if isinstance(temp_dir, str) else temp_dir
+            if temp_dir_path.exists():
+                shutil.rmtree(temp_dir_path)
 
 @app.delete("/analyze/{job_id}")
 async def cancel_analysis(job_id: str):
     """
     Cancel analysis job and cleanup files
     """
-    if job_id not in analysis_jobs:
+    job = job_manager.get_job(job_id)
+    if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job = analysis_jobs[job_id]
+    # Delete from MongoDB
+    job_manager.delete_job(job_id)
+    results_manager.delete_results(job_id)
+    
+    # Cleanup temp files
     temp_dir = job.get("temp_dir")
-    
-    if temp_dir and temp_dir.exists():
-        shutil.rmtree(temp_dir)
-    
-    del analysis_jobs[job_id]
+    if temp_dir:
+        temp_dir_path = Path(temp_dir) if isinstance(temp_dir, str) else temp_dir
+        if temp_dir_path.exists():
+            shutil.rmtree(temp_dir_path)
     
     return {"message": "Job cancelled and files cleaned up"}
 
@@ -184,7 +243,12 @@ async def health_check():
     """
     Health check endpoint
     """
-    return {"status": "healthy", "version": "1.0.0"}
+    return {
+        "status": "healthy", 
+        "version": "1.0.0",
+        "mongodb": "connected",
+        "storage": "mongodb"
+    }
 
 @app.get("/")
 async def root():
