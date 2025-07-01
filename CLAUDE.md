@@ -93,3 +93,31 @@ Environment variables are loaded via `.env` file:
 2. Access API docs: `http://localhost:8000/docs` (Swagger UI)
 3. Test endpoints: Use `test_server.py` or curl commands
 4. Upload videos via POST to `/analyze` with analysis type specification
+
+## Code Style Guidelines
+
+### Core Principles
+- **KISS (Keep It Stupid Simple)** - Prioritize simplicity and clarity over clever solutions
+- **DRY (Don't Repeat Yourself)** - Extract common functionality into reusable functions/modules
+- **Single Responsibility Principle** - Each function/class should have one clear purpose
+- **Explicit is better than implicit** - Code should be self-documenting and clear
+
+### Python Style
+- Follow PEP 8 conventions
+- Use type hints for function parameters and return values
+- Prefer descriptive variable names over comments
+- Use dataclasses for configuration and data structures
+- Handle errors explicitly with try/except blocks
+
+### Architecture Guidelines
+- Keep modules focused and cohesive
+- Use dependency injection for external services (database, APIs)
+- Separate business logic from HTTP/API concerns
+- Prefer composition over inheritance
+- Write testable code with clear interfaces
+
+### Error Handling
+- Use specific exception types rather than generic Exception
+- Log errors with sufficient context for debugging
+- Fail fast and provide clear error messages
+- Implement graceful degradation where appropriate
