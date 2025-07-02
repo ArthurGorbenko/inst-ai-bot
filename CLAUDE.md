@@ -21,6 +21,30 @@ This is a video processing system that analyzes video content using computer vis
 ### Node.js (minimal usage)
 - `npm install` - Install Node.js dependencies (minimal usage)
 
+## Project Structure
+
+### Repository Layout
+```
+/
+├── web/                  # Next.js frontend application
+│   ├── src/
+│   │   ├── app/         # Next.js App Router pages
+│   │   ├── components/  # React components
+│   │   └── lib/         # API client and utilities
+│   └── package.json     # Frontend dependencies
+├── video_processor/      # Python video processing modules
+├── server.py            # FastAPI backend server
+├── requirements.txt     # Python dependencies
+├── package.json         # Workspace configuration
+└── CLAUDE.md           # This file
+```
+
+### Workspace Configuration
+- **Root**: npm workspace with scripts for full-stack development
+- **Frontend**: Next.js app in `web/` directory
+- **Backend**: Python FastAPI server with video processing pipeline
+- **CORS**: Configured for local development (frontend ↔ backend)
+
 ## Architecture
 
 ### HTTP API Server (`server.py`)
@@ -89,10 +113,31 @@ Environment variables are loaded via `.env` file:
 - PySceneDetect for scene boundary detection
 
 ### Development Workflow
+
+#### Backend Only
 1. Start server: `source venv/bin/activate && python -m fastapi dev server.py`
 2. Access API docs: `http://localhost:8000/docs` (Swagger UI)
 3. Test endpoints: Use `test_server.py` or curl commands
 4. Upload videos via POST to `/analyze` with analysis type specification
+
+#### Full Stack Development (Backend + Frontend)
+1. **Start both services**: `npm run dev` (runs backend and frontend concurrently)
+   - Backend: FastAPI server on `http://localhost:8000`
+   - Frontend: Next.js app on `http://localhost:3000`
+2. **Frontend only**: `npm run dev:frontend`
+3. **Backend only**: `npm run dev:backend`
+4. **Build frontend**: `npm run build:frontend`
+5. **Test backend**: `npm run test:backend`
+
+#### Frontend Architecture
+- **Next.js 14** with App Router and TypeScript
+- **TanStack Query** for API state management with 1-second polling
+- **Tailwind CSS** for styling
+- **Components**:
+  - `VideoUpload` - Drag-and-drop file upload with analysis selection
+  - `JobStatus` - Real-time job monitoring with progress indicators
+  - `ResultsViewer` - Structured display of analysis results
+- **API Integration**: TypeScript client with full type safety
 
 ## Code Style Guidelines
 

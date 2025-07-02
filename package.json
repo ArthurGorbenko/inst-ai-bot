@@ -1,12 +1,19 @@
 {
   "name": "inst-ai",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Video processing system with AI analysis and web frontend",
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:backend": "source venv/bin/activate && python -m fastapi dev server.py",
+    "dev:frontend": "npm run dev --workspace=web",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:frontend": "npm run build --workspace=web",
+    "test:backend": "source venv/bin/activate && python test_server.py",
+    "test": "npm run test:backend"
   },
-  "keywords": [],
+  "keywords": ["video", "ai", "analysis", "computer-vision"],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -14,5 +21,8 @@
     "mongodb": "^6.11.0",
     "openai": "^4.73.1",
     "twelvelabs-js": "^0.3.3"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
   }
 }
