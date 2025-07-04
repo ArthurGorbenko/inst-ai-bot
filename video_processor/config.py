@@ -11,6 +11,11 @@ class Config:
     MONGODB_DB: str
     OPENAI_API_KEY: str = None
     TWELVE_LABS_API_KEY: str = None
+    TWELVE_LABS_INDEX_NAME: str = "default-index"
+    TWELVE_LABS_INDEX_ID: str = None
+    INDEXING_TIMEOUT: int = 1800  # 30 minutes
+    INDEXING_POLL_INTERVAL: int = 10  # 10 seconds
+    SUPPORTED_VIDEO_FORMATS: str = "mp4,mov,avi,mkv,webm,m4v"
 
 def get_config():
     """Load configuration from environment variables or defaults"""
@@ -26,6 +31,34 @@ def get_config():
         MONGODB_DB=os.environ.get("MONGODB_DB", "creator-kb"),
         OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY"),
         TWELVE_LABS_API_KEY=os.environ.get("TWELVE_LABS_API_KEY"),
+        TWELVE_LABS_INDEX_NAME=os.environ.get("TWELVE_LABS_INDEX_NAME", "default-index"),
+        TWELVE_LABS_INDEX_ID=os.environ.get("TWELVE_LABS_INDEX_ID"),
+        INDEXING_TIMEOUT=int(os.environ.get("INDEXING_TIMEOUT", "1800")),
+        INDEXING_POLL_INTERVAL=int(os.environ.get("INDEXING_POLL_INTERVAL", "10")),
+        SUPPORTED_VIDEO_FORMATS=os.environ.get("SUPPORTED_VIDEO_FORMATS", "mp4,mov,avi,mkv,webm,m4v"),
     )
     
-    return config 
+    return config
+
+
+def validate_video_format(video_path: str, config: Config) -> bool:
+    """
+    Validate if video format is supported based on file extension.
+    
+    Args:
+        video_path: Path to video file
+        config: Configuration object
+        
+    Returns:
+        True if format is supported, False otherwise
+    """
+    if not video_path:
+        return False
+    
+    # Get file extension
+    file_extension = video_path.lower().split('.')[-1]
+    
+    # Check if extension is in supported formats
+    supported_formats = [fmt.strip().lower() for fmt in config.SUPPORTED_VIDEO_FORMATS.split(',')]
+    
+    return file_extension in supported_formats 

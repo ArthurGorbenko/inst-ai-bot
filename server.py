@@ -14,7 +14,7 @@ from pathlib import Path
 
 # Import our modular pipeline
 from video_processor.pipeline import run_analysis, get_supported_analysis_types, get_analysis_descriptions
-from video_processor.config import get_config
+from video_processor.config import get_config, validate_video_format
 from video_processor.db import DatabaseConnection, JobManager, ResultsManager
 
 # Configure logging
@@ -71,6 +71,11 @@ class AnalysisResponse(BaseModel):
     results: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     processing_time: Optional[float] = None
+    # TwelveLabs indexing progress fields
+    twelve_labs_video_id: Optional[str] = None
+    twelve_labs_index_id: Optional[str] = None
+    indexing_status: Optional[str] = None
+    indexing_progress: Optional[float] = None
 
 # Initialize database connection and managers
 config = get_config()
@@ -82,20 +87,18 @@ results_manager = None
 async def analyze_video(
     video: UploadFile = File(..., description="Video file to analyze"),
     analyses: str = Form(..., description="Comma-separated list of analysis types"),
-    config: Optional[str] = Form(None, description="JSON config string")
+    user_config: Optional[str] = Form(None, description="JSON config string")
 ):
     """
     Analyze uploaded video file with specified analysis types
     """
-    # Validate file type - check both content type and file extension
-    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v'}
-    file_extension = Path(video.filename).suffix.lower() if video.filename else ""
-    
-    is_video_content_type = video.content_type and video.content_type.startswith("video/")
-    is_video_extension = file_extension in video_extensions
-    
-    if not (is_video_content_type or is_video_extension):
-        raise HTTPException(status_code=400, detail=f"File must be a video. Got content_type: {video.content_type}, extension: {file_extension}")
+    # Validate file type using config-based validation
+    if not validate_video_format(video.filename, config):
+        file_extension = Path(video.filename).suffix.lower() if video.filename else ""
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported video format '{file_extension}'. Supported formats: {config.SUPPORTED_VIDEO_FORMATS}"
+        )
     
     # Parse analysis types
     try:
@@ -135,10 +138,18 @@ async def analyze_video(
         # Start async processing
         asyncio.create_task(process_video_analysis(job_id))
         
+        # If multimodal analysis is requested, start TwelveLabs upload in background
+        if "multimodal" in [a.value for a in analysis_list]:
+            asyncio.create_task(process_twelvelabs_upload(job_id))
+        
         return AnalysisResponse(
             job_id=job_id,
             status="processing",
-            results=None
+            results=None,
+            twelve_labs_video_id=None,
+            twelve_labs_index_id=None,
+            indexing_status=None,
+            indexing_progress=None
         )
         
     except Exception as e:
@@ -168,7 +179,11 @@ async def get_analysis_status(job_id: str):
         job_id=job_id,
         status=job["status"],
         results=results,
-        error=job.get("error")
+        error=job.get("error"),
+        twelve_labs_video_id=job.get("twelve_labs_video_id"),
+        twelve_labs_index_id=job.get("twelve_labs_index_id"),
+        indexing_status=job.get("indexing_status"),
+        indexing_progress=job.get("indexing_progress")
     )
 
 async def process_video_analysis(job_id: str):
@@ -193,6 +208,9 @@ async def process_video_analysis(job_id: str):
         else:
             analysis_types = [analysis.value for analysis in job["analyses"]]
         
+        # Add job_id to job_manager for tracking
+        job_manager.current_job_id = job_id
+        
         # Run analysis in thread pool to avoid blocking the event loop
         loop = asyncio.get_event_loop()
         results = await loop.run_in_executor(
@@ -200,7 +218,8 @@ async def process_video_analysis(job_id: str):
             run_analysis, 
             video_path, 
             analysis_types, 
-            None  # twelvelabs_video_id
+            None,  # twelvelabs_video_id
+            job_manager  # Pass job_manager for database updates
         )
         
         # Update job with results
@@ -217,6 +236,74 @@ async def process_video_analysis(job_id: str):
         # Cleanup temporary files after some delay
         asyncio.create_task(cleanup_job_files(job_id, delay=3600))  # 1 hour delay
 
+
+async def process_twelvelabs_upload(job_id: str):
+    """
+    Handle TwelveLabs upload and indexing in background
+    """
+    job_data = job_manager.get_job(job_id)
+    if not job_data:
+        logger.error(f"Job {job_id} not found for TwelveLabs upload")
+        return
+    
+    try:
+        video_path = job_data["video_path"]
+        filename = Path(video_path).name
+        
+        # Check if this filename was already uploaded
+        existing_job = job_manager.get_video_by_filename(filename)
+        if existing_job and existing_job.get("twelve_labs_video_id"):
+            logger.info(f"Found existing TwelveLabs video for {filename}, generating summary")
+            existing_video_id = existing_job["twelve_labs_video_id"]
+            
+            # Update current job with existing video info
+            job_manager.update_twelve_labs_metadata(
+                job_id=job_id,
+                video_id=existing_video_id,
+                index_id=existing_job.get("twelve_labs_index_id"),
+                task_id=existing_job.get("twelve_labs_task_id"),
+                indexing_status="ready"
+            )
+            
+            # Generate summary
+            from video_processor.multimodal import generate_summary, extract_summary_text
+            summary_result = generate_summary(config.TWELVE_LABS_API_KEY, existing_video_id)
+            
+            # Store results
+            results_manager.store_results(job_id, "multimodal", {
+                "summary": extract_summary_text(summary_result),
+                "video_id": existing_video_id,
+                "reused_existing_upload": True
+            }, 0.0)
+            
+        else:
+            # Continue with the upload process
+            from video_processor.multimodal import get_video_analysis
+            
+            # Set job_manager context
+            job_manager.current_job_id = job_id
+            
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                get_video_analysis,
+                config.TWELVE_LABS_API_KEY,
+                video_path,
+                config.TWELVE_LABS_INDEX_ID,
+                config.TWELVE_LABS_INDEX_NAME,
+                job_manager,
+                job_id
+            )
+            
+            # Store final results
+            if result.get("status") == "completed":
+                results_manager.store_results(job_id, "multimodal", result, 0.0)
+            else:
+                # Update job status to failed if upload failed
+                job_manager.update_job_status(job_id, "failed", result.get("error"))
+                
+    except Exception as e:
+        logger.error(f"Error in TwelveLabs upload for job {job_id}: {e}")
+        job_manager.update_job_status(job_id, "failed", str(e))
 
 async def cleanup_job_files(job_id: str, delay: int = 3600):
     """

@@ -21,6 +21,14 @@ class JobDocument(BaseModel):
     updated_at: datetime
     processing_start_time: Optional[datetime] = None
     processing_end_time: Optional[datetime] = None
+    # TwelveLabs specific fields
+    twelve_labs_video_id: Optional[str] = None
+    twelve_labs_index_id: Optional[str] = None
+    twelve_labs_task_id: Optional[str] = None
+    indexing_status: Optional[str] = None  # "pending", "validating", "running", "ready", "failed"
+    indexing_progress: Optional[float] = None  # 0.0 to 1.0
+    indexing_start_time: Optional[datetime] = None
+    indexing_end_time: Optional[datetime] = None
 
 class ResultDocument(BaseModel):
     job_id: str
@@ -63,6 +71,10 @@ class DatabaseConnection:
         jobs_col.create_index("job_id", unique=True)
         jobs_col.create_index("status")
         jobs_col.create_index("created_at")
+        jobs_col.create_index("twelve_labs_video_id")
+        jobs_col.create_index("twelve_labs_index_id")
+        jobs_col.create_index("indexing_status")
+        jobs_col.create_index("video_filename")  # For duplicate detection
         
         # Results collection indexes  
         results_col.create_index("job_id")
@@ -167,6 +179,60 @@ class JobManager:
                 return False
         except Exception as e:
             logger.error(f"Failed to delete job {job_id}: {e}")
+            return False
+    
+    def get_video_by_filename(self, filename: str) -> Optional[Dict[str, Any]]:
+        """Get job with TwelveLabs video_id by filename"""
+        try:
+            job = self.db.jobs_collection.find_one({
+                "video_filename": filename,
+                "twelve_labs_video_id": {"$ne": None}
+            })
+            if job:
+                job.pop("_id", None)
+            return job
+        except Exception as e:
+            logger.error(f"Failed to get video by filename {filename}: {e}")
+            return None
+
+    def update_twelve_labs_metadata(self, job_id: str, video_id: str = None, index_id: str = None, 
+                                   task_id: str = None, indexing_status: str = None, 
+                                   indexing_progress: float = None) -> bool:
+        """Update TwelveLabs specific metadata for a job"""
+        try:
+            update_data = {
+                "updated_at": datetime.utcnow()
+            }
+            
+            if video_id:
+                update_data["twelve_labs_video_id"] = video_id
+            if index_id:
+                update_data["twelve_labs_index_id"] = index_id
+            if task_id:
+                update_data["twelve_labs_task_id"] = task_id
+            if indexing_status:
+                update_data["indexing_status"] = indexing_status
+                # Set timing fields based on status
+                if indexing_status in ["pending", "validating", "running"] and not self.get_job(job_id).get("indexing_start_time"):
+                    update_data["indexing_start_time"] = datetime.utcnow()
+                elif indexing_status in ["ready", "failed"]:
+                    update_data["indexing_end_time"] = datetime.utcnow()
+            if indexing_progress is not None:
+                update_data["indexing_progress"] = indexing_progress
+                
+            result = self.db.jobs_collection.update_one(
+                {"job_id": job_id},
+                {"$set": update_data}
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"Updated TwelveLabs metadata for job {job_id}")
+                return True
+            else:
+                logger.warning(f"No job found to update: {job_id}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to update TwelveLabs metadata for job {job_id}: {e}")
             return False
             
 class ResultsManager:

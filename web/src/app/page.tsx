@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { VideoUpload } from '@/components/VideoUpload';
 import { JobStatus } from '@/components/JobStatus';
 import { ResultsViewer } from '@/components/ResultsViewer';
@@ -20,10 +20,10 @@ export default function Home() {
     setAppState('processing');
   };
 
-  const handleJobComplete = (jobResults: Record<string, unknown>) => {
+  const handleJobComplete = useCallback((jobResults: Record<string, unknown>) => {
     setResults(jobResults);
     setAppState('results');
-  };
+  }, []);
 
   const handleJobCancel = () => {
     setCurrentJobId(null);

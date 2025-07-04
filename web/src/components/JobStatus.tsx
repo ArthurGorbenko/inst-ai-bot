@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useJobStatus, useCancelJob } from '@/lib/api';
 
 interface JobStatusProps {
@@ -12,10 +13,12 @@ export function JobStatus({ jobId, onJobComplete, onJobCancel }: JobStatusProps)
   const { data: job, isLoading, error } = useJobStatus(jobId);
   const cancelMutation = useCancelJob();
 
-  // Handle job completion
-  if (job?.status === 'completed' && job.results) {
-    onJobComplete(job.results);
-  }
+  // Handle job completion - use useEffect to avoid calling setState during render
+  useEffect(() => {
+    if (job?.status === 'completed' && job.results) {
+      onJobComplete(job.results);
+    }
+  }, [job?.status, job?.results, onJobComplete]);
 
   const handleCancel = async () => {
     try {

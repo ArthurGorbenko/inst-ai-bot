@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor
 
@@ -10,16 +11,20 @@ from .captioning import generate_scene_description
 from .transcription import extract_transcription
 from .matching import match_transcription_to_scenes
 from .summarizer import summarize_scenes
-from .multimodal import generate_summary
+from .multimodal import generate_summary, get_video_analysis, extract_summary_text
+
+logger = logging.getLogger(__name__)
 
 
-def analyze_multimodal(video_path: str, video_id: str) -> Dict[str, Any]:
+def analyze_multimodal(video_path: str, video_id: str = None, job_manager=None) -> Dict[str, Any]:
     """
     Analyze video using TwelveLabs multimodal API.
+    Handles both cases: existing video_id or automatic upload+indexing.
     
     Args:
         video_path: Path to video file
-        video_id: TwelveLabs video ID for the uploaded video
+        video_id: TwelveLabs video ID for the uploaded video (optional)
+        job_manager: JobManager instance for database updates (optional)
         
     Returns:
         Dict containing multimodal analysis results
@@ -27,16 +32,108 @@ def analyze_multimodal(video_path: str, video_id: str) -> Dict[str, Any]:
     config = get_config()
     
     try:
-        # Generate multimodal summary using TwelveLabs
-        summary_result = generate_summary(config.TWELVE_LABS_API_KEY, video_id)
-        
-        return {
-            "analysis_type": "multimodal",
-            "status": "completed",
-            "results": {
-                "summary": summary_result.summary if summary_result else None
+        # Case 1: video_id provided - use existing video
+        if video_id:
+            summary_result = generate_summary(config.TWELVE_LABS_API_KEY, video_id)
+            
+            return {
+                "analysis_type": "multimodal",
+                "status": "completed",
+                "results": {
+                    "summary": extract_summary_text(summary_result),
+                    "video_id": video_id
+                }
             }
-        }
+        
+        # Case 2: No video_id provided - check for existing upload or upload new
+        else:
+            # Validate video format
+            from .config import validate_video_format
+            if not validate_video_format(video_path, config):
+                return {
+                    "analysis_type": "multimodal",
+                    "status": "error",
+                    "error": f"Unsupported video format. Supported formats: {config.SUPPORTED_VIDEO_FORMATS}"
+                }
+            
+            # Check if this filename was already uploaded to TwelveLabs
+            import os
+            filename = os.path.basename(video_path)
+            existing_job = None
+            
+            if job_manager:
+                existing_job = job_manager.get_video_by_filename(filename)
+                
+            if existing_job and existing_job.get("twelve_labs_video_id"):
+                logger.info(f"Found existing TwelveLabs video for filename: {filename}")
+                existing_video_id = existing_job["twelve_labs_video_id"]
+                
+                # Generate summary using existing video_id
+                summary_result = generate_summary(config.TWELVE_LABS_API_KEY, existing_video_id)
+                
+                return {
+                    "analysis_type": "multimodal",
+                    "status": "completed",
+                    "results": {
+                        "summary": extract_summary_text(summary_result),
+                        "video_id": existing_video_id,
+                        "index_id": existing_job.get("twelve_labs_index_id"),
+                        "task_id": existing_job.get("twelve_labs_task_id"),
+                        "index_was_created": False,
+                        "reused_existing_upload": True
+                    }
+                }
+            
+            # No existing upload found - start upload process and return immediately
+            logger.info(f"No existing upload found for {filename}, starting upload process")
+            current_job_id = getattr(job_manager, "current_job_id", None) if job_manager else None
+            
+            # Start the upload process asynchronously
+            try:
+                from .config import validate_video_format
+                if not validate_video_format(video_path, config):
+                    return {
+                        "analysis_type": "multimodal",
+                        "status": "error",
+                        "error": f"Unsupported video format. Supported formats: {config.SUPPORTED_VIDEO_FORMATS}"
+                    }
+                
+                # Get or create index first (this is quick)
+                from .multimodal import create_or_get_index
+                final_index_id, was_created = create_or_get_index(
+                    config.TWELVE_LABS_API_KEY, 
+                    config.TWELVE_LABS_INDEX_NAME, 
+                    config.TWELVE_LABS_INDEX_ID
+                )
+                
+                # Update job with index info and set status to indicate upload started
+                if job_manager and current_job_id:
+                    job_manager.update_twelve_labs_metadata(
+                        job_id=current_job_id,
+                        index_id=final_index_id,
+                        indexing_status="uploading"
+                    )
+                
+                # Return immediately - the background process will continue
+                return {
+                    "analysis_type": "multimodal",
+                    "status": "processing",
+                    "results": {
+                        "message": "Video upload started - check status for progress",
+                        "index_id": final_index_id,
+                        "index_was_created": was_created,
+                        "reused_existing_upload": False
+                    }
+                }
+                
+            except Exception as e:
+                logger.error(f"Error starting upload process: {e}")
+                return {
+                    "analysis_type": "multimodal",
+                    "status": "error",
+                    "error": str(e)
+                }
+            
     except Exception as e:
         return {
             "analysis_type": "multimodal", 
